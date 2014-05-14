@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import argparse
+import os
+import subprocess
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument('-i', '--input', required=True, help='FASTQ sequences')
+parser.add_argument('-o', '--output', required=True, help='Output folder')
+parser.add_argument('--adapterOverlap', default=5, help='adapter overlaping')
+parser.add_argument('--adapterError', default=0.1, help='adapterr error')
+parser.add_argument('-m', '--minReadLength', default=20, help='min. read length')
+parser.add_argument('-q', '--qualityCutoff', default=20, help='Quality Cutoff')
+parser.add_argument('-a', '--adapter', dest='adapters', action='append', help='adapter sequence')
+parser.add_argument('-N', '--unknownBases', default=2, type=int, help='Number of unknown bases allowed')
+
+args = parser.parse_args()
+
+### Functions
+def unknownTrimming (rec):
+	i = 0
+	j = len(rec.seq)
+
+	unk = [x in ['A', 'T', 'C', 'G'] for x in rec.seq]
+
+	try:
+		i = unk.index(True)
+		rev = list(reversed(unk))
+		j = j - rev.index(True)
+	except ValueError:
+		i = 0
+		j = len(rec.seq)
+	
+	return i, j, j-i+1, rec.seq[i:j].count("N")
+
+
+if not os.path.exists(args.output):
+	os.makedirs(args.output)
+
+basename = os.path.basename(args.input)
+basename = ".".join(basename.split(".")[0:-1])
+
+filename1 = "%s.unknownTrim.fastq" % basename
+filename2 = "%s.cutadapt.fastq" % basename
+filename3 = "%s.cutadapt.log" % basename
+
+
+fh = open(args.input, "rU")
+out = open(os.path.join(args.output,filename1), "w")
+for record in SeqIO.parse(fh, "fastq"):
+	(i, j, L, n) = unkInfo = unknownTrimming(record)
+
+	if L >= args.minReadLength and n <= args.unknownBases:
+		SeqIO.write(record[unkInfo[0]:unkInfo[1]], out, "fastq")
+	else:
+		print "Reject: %s" % (record.id)
+
+fh.close()
+out.close()
+
+
+adapt = " -a ".join(args.adapters)
+q = """cutadapt -f fastq -O %s -e %s -m %s -q %s -a %s -o %s %s""" % (args.adapterOverlap, args.adapterError, args.minReadLength, args.qualityCutoff, adapt, os.path.join(args.output, filename2), os.path.join(args.output,filename1))
+
+
+log = open(os.path.join(args.output, filename3), 'w')
+
+p = subprocess.Popen(q.split(" "), stderr=log, stdout=log)
+
+returnCode = p.wait()
+
+print returnCode
