@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+
+import numpy
+
+class record (object):
+	alphabet = ['A', 'T', 'C', 'G', 'a', 't', 'c', 'g']
+	unknown = 'N'
+
+	def __init__ (self, id, seq, qual):
+		'''FastaQ record initializer'''
+		self.identifier = id
+		self.sequence = seq
+		self.quality = qual
+
+		self.__encoding = 'phred'	### 'phred' == offset 33 && 'solexa' == offset 64
+
+	def setEnconding (self, enc):
+		'''Set enconding method. Enconding can be set as 'phred' or 'solexa'. '''
+		self.__encoding = enc
+
+	def trimEndsByQuality (self, Q=20):
+		'''Trimming method based on quality'''
+		v = self.getNumericalQuality()
+
+		b = [ x < Q for x in v ]
+
+		self.__booleanTrimming(b)
+
+	def lowQualityMask(self, Q=20, character="N"):
+		'''Mask sequence according quality values'''
+		v = self.getNumericalQuality()
+		
+		m = [ self.sequence[i] if v[i] >= Q else character for i in range(0, len(self.sequence))]
+		
+		self.sequence = "".join(m)
+
+	def meanQuality(self):
+		'''Returns sequence quality mean'''
+		v = self.getNumericalQuality()
+		return numpy.mean(v)	
+
+	def getNumericalQuality(self):
+		'''Transform ASCII characters in PHRED score'''
+		'''Old Solexa Style is using ASCII offset 64'''
+		if self.__encoding == 'phred':
+			offset = 33
+		elif self.__encoding == 'solexa':
+			offset = 64
+		else:
+			self.__encoding == 'unknown'
+			offset = 33
+
+		return [ord(l)-offset for l in self.quality]
+
+	def countUnknownNucleotides(self):
+		'''Count unknown nucleotides'''
+		b = [True if l in record.alphabet else False for l in self.sequence]
+		return b.count(False)
+
+	def __booleanTrimming (self, boolean):
+		'''True mark means excluded base'''
+		i = 0
+		j = len(self.sequence)
+
+		boolean = map(bool, boolean)
+
+		assert len(self.sequence) == len(boolean), "**ERROR: Boolean list length differs from sequence length"
+
+		try:
+			i = boolean.index(False)
+			rev = list(reversed(boolean))
+			j = j - rev.index(False)
+		except ValueError:
+			i = i
+			j = j
+
+		self.sequence = self.sequence[i:j]
+		self.quality = self.quality[i:j]
+
+	def trimUnknownEnds(self):
+		'''Trim unknown bases ends'''
+		if self.countUnknownNucleotides() > 0:
+			unk = [not x in record.alphabet for x in self.sequence]
+
+			self.__booleanTrimming(unk)
+
+	def __repr__ (self):
+		return "@%s\n%s\n+%s\n%s" % (self.identifier, self.sequence, self.identifier, self.quality)
+
+class parser (object):
+	def __init__ (self, filepath, headerSymbols=['@', '+']):
+		if filepath.endswith('.gz'):
+			self.__file = gzip.open(filepath)
+		else:
+			self.__file = open(filepath, 'rU')
+
+		self.__currentLineNumber = 0
+		self.__hdSyms = headerSymbols
+
+	def __iter__(self):
+		return self
+
+	def next(self):
+		elemList = []
+		for i in range(4):
+			line = self.__file.readline()
+			self.__currentLineNumber += 1
+			if line:
+				elemList.append(line.strip('\n'))
+			else:
+				elemList.append(None)
+
+		trues = [bool(x) for x in elemList].count(True)
+		nones = elemList.count(None)
+
+		if nones == 4:
+			raise StopIteration
+		assert trues == 4, "** ERROR: It looks like I encountered a premature EOF or empty line.\nPlease check FastQ file near line %s (plus or minus 4 lines)**" % (self._currentLineNumber)
+		assert elemList[0].startswith(self.__hdSyms[0]), "** ERROR: Wrong format in the 1st line (%s) of the entry %s" % (self.__hdSyms[0], self.__currentLineNumber)
+		assert elemList[2].startswith(self.__hdSyms[1]), "** ERROR: Wrong format in the 3rd line (%s) of the entry %s" % (self.__hdSyms[1], self.__currentLineNumber)
+		assert len(elemList[1]) == len(elemList[3]), "** ERROR: Sequence length differs from quality string length. Line %s" % (self.__currentLineNumber)
+
+		elemList[0] = elemList[0][1:]
+
+		return record(elemList[0], elemList[1], elemList[3])
+
+
+import sys
+
+fq = parser(sys.argv[1])
+
+for x in fq:
+	x.trimEndsByQuality()
+	print x
