@@ -1,8 +1,15 @@
-LuskinExoVar: Whole EXOme Sequencing Pipeline for VARiant Identification
-==============
+Next Generation Sequencing Pipeline
+=============
 
 Author: Sergio Lois Olmo Ph.D
 (sergio.lois@gmail.com)
+
+
+
+LuskinExoVar: Whole EXOme Sequencing Pipeline for VARiant Identification
+-------------
+
+
 
 
 
